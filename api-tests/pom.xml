@@ -20,6 +20,8 @@
         <datafaker.version>2.4.2</datafaker.version>
         <dotenv.version>3.0.2</dotenv.version>
         <logback.version>1.5.12</logback.version>
+        <allure.version>3.0.0</allure.version>
+        <aspectj.version>1.9.25</aspectj.version>
     </properties>
 
     <dependencyManagement>
@@ -28,6 +30,13 @@
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
                 <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-bom</artifactId>
+                <version>${allure.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -82,6 +91,11 @@
             <version>${logback.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.qameta.allure</groupId>
+            <artifactId>allure-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -101,6 +115,42 @@
                     </includes>
                     <trimStackTrace>false</trimStackTrace>
                     <!-- Allow: mvn test -Dgroups=crud -->
+                    <!-- Required by Allure for @Step/@Attachment annotation support -->
+                    <argLine>
+                        -javaagent:"${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar"
+                    </argLine>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.aspectj</groupId>
+                        <artifactId>aspectjweaver</artifactId>
+                        <version>${aspectj.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+            <!--
+              Deletes target/'s contents instead of the directory itself.
+              By default, "mvn clean" rmdir's target/ entirely and recreates
+              it — which fails when target/ is a Docker bind mount, because
+              the OS won't let a container delete an active mount point.
+              This config works identically whether target/ is a normal
+              directory (local runs) or a bind mount (Docker), so "mvn clean
+              test" behaves the same everywhere.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                    <filesets>
+                        <fileset>
+                            <directory>${project.build.directory}</directory>
+                            <includes>
+                                <include>**/*</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
                 </configuration>
             </plugin>
         </plugins>

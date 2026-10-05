@@ -1,0 +1,43 @@
+# Run either suite without installing Java or Maven locally:
+#
+#   export GOREST_API_TOKEN=your-token
+#   docker compose run --rm ui-tests
+#   docker compose run --rm api-tests
+#
+# Note: the assignment's example command is `docker compose run tests`
+# (a single generic service). This repo instead defines two services,
+# ui-tests and api-tests, matching the two independent Maven projects and
+# the two-job CI structure in .github/workflows/ci.yml — this assumption
+# is called out in the root README.
+
+services:
+  ui-tests:
+    build:
+      context: ./ui-tests
+    # Playwright's own Docker guidance recommends --ipc=host: the default
+    # Docker shared-memory limit is too small for Chromium and causes
+    # intermittent crashes without this.
+    ipc: host
+    environment:
+      - SAUCEDEMO_HEADLESS=true
+    volumes:
+      # Without this, "docker compose run --rm" deletes the container (and
+      # everything in it, including Surefire reports and failure
+      # screenshots) the moment the run finishes. Bind-mounting target/
+      # writes those files straight to the host instead.
+      - ./ui-tests/target:/app/target
+      # Named volume shared by both services: caches downloaded Maven
+      # dependencies across runs instead of re-fetching them every time.
+      - maven-cache:/root/.m2
+
+  api-tests:
+    build:
+      context: ./api-tests
+    environment:
+      - GOREST_API_TOKEN=${GOREST_API_TOKEN}
+    volumes:
+      - ./api-tests/target:/app/target
+      - maven-cache:/root/.m2
+
+volumes:
+  maven-cache:

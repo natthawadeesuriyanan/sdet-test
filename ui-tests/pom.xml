@@ -13,9 +13,44 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <playwright.version>1.63.0</playwright.version>
         <junit.version>5.14.4</junit.version>
+        <allure.version>3.0.0</allure.version>
+        <aspectj.version>1.9.25</aspectj.version>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <!--
+              Pins every JUnit Platform/Jupiter module (including
+              junit-platform-launcher, which junit-pioneer pulls in
+              transitively via its own, older internal junit-bom) to the
+              same ${junit.version}. Without this, Maven can resolve
+              junit-platform-engine and junit-platform-launcher at two
+              different, binary-incompatible versions, causing
+              "TestEngine failed to discover tests" at runtime.
+            -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-bom</artifactId>
+                <version>${allure.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <dependency>
+            <groupId>io.qameta.allure</groupId>
+            <artifactId>allure-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
@@ -26,6 +61,17 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          Provides @RetryingTest. JUnit 5 has no built-in retry mechanism.
+          VERIFY THE VERSION BELOW AT https://mvnrepository.com/artifact/org.junit-pioneer/junit-pioneer
+          before relying on it — not independently confirmed here.
+        -->
+        <dependency>
+            <groupId>org.junit-pioneer</groupId>
+            <artifactId>junit-pioneer</artifactId>
+            <version>2.3.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -43,12 +89,47 @@
                 <version>3.6.0</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
+                    <!-- Required by Allure for @Step/@Attachment annotation support -->
+                    <argLine>
+                        -javaagent:"${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar"
+                    </argLine>
                 </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.aspectj</groupId>
+                        <artifactId>aspectjweaver</artifactId>
+                        <version>${aspectj.version}</version>
+                    </dependency>
+                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
+            </plugin>
+            <!--
+              Deletes target/'s contents instead of the directory itself.
+              By default, "mvn clean" rmdir's target/ entirely and recreates
+              it — which fails when target/ is a Docker bind mount, because
+              the OS won't let a container delete an active mount point.
+              This config works identically whether target/ is a normal
+              directory (local runs) or a bind mount (Docker), so "mvn clean
+              test" behaves the same everywhere.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <configuration>
+                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                    <filesets>
+                        <fileset>
+                            <directory>${project.build.directory}</directory>
+                            <includes>
+                                <include>**/*</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
+                </configuration>
             </plugin>
         </plugins>
     </build>

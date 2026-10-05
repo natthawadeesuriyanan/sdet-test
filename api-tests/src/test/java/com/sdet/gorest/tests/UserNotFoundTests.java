@@ -17,7 +17,7 @@ class UserNotFoundTests extends BaseApiTest {
 
     @ParameterizedTest(name = "{0} on a deleted id -> 404")
     @ValueSource(strings = {"GET", "PUT", "DELETE"})
-  //  @DisplayName("Operations on an id that no longer exists -> 404 with error body")
+    @DisplayName("Operations on an id that no longer exists -> 404 with error body")
     void get_put_delete_on_deleted_user(String method) {
         long deletedId = userSteps.idOfDeletedUser(); // dynamic, never a hardcoded "999999"
 
@@ -33,7 +33,7 @@ class UserNotFoundTests extends BaseApiTest {
 
     @ParameterizedTest(name = "GET /users/{0} -> 4xx")
     @ValueSource(strings = {"0", "-1", "abc", "1.5", "99999999999999999999999"})
-   // @DisplayName("Malformed / out-of-range ids are a client error, never a 5xx")
+    @DisplayName("Malformed / out-of-range ids are a client error, never a 5xx")
     void get_invalid_ids(String id) {
         assertClientError(users.get(id));
     }

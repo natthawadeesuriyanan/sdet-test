@@ -2,7 +2,6 @@ package com.sdet.gorest.client;
 
 import com.sdet.gorest.data.TestDataRegistry;
 import io.restassured.response.Response;
-
 import java.util.Map;
 
 /**
@@ -14,7 +13,6 @@ public class UsersClient extends ApiClient {
     private static final String USERS = "/users";
     private static final String USER_BY_ID = "/users/{id}";
 
-    // ---- create ----
     public Response create(Object body) {
         return create(body, Auth.TOKEN);
     }
@@ -32,7 +30,6 @@ public class UsersClient extends ApiClient {
         return r;
     }
 
-    // ---- read ----
     public Response get(Object id) {
         return get(id, Auth.TOKEN);
     }
@@ -49,7 +46,6 @@ public class UsersClient extends ApiClient {
         return execute("GET", () -> request(auth).queryParams(query).get(USERS));
     }
 
-    // ---- update ----
     public Response update(Object id, Object body) {
         return update(id, body, Auth.TOKEN);
     }
@@ -58,7 +54,6 @@ public class UsersClient extends ApiClient {
         return execute("PUT", () -> request(auth).pathParam("id", id).body(body).put(USER_BY_ID));
     }
 
-    // ---- delete ----
     public Response delete(Object id) {
         return delete(id, Auth.TOKEN);
     }

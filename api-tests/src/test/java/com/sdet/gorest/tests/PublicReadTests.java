@@ -14,7 +14,6 @@ import static com.sdet.gorest.assertions.ApiAssertions.assertResponseTime;
 import static com.sdet.gorest.assertions.ApiAssertions.assertSchema;
 import static com.sdet.gorest.assertions.ApiAssertions.assertStatus;
 
-/** Intentionally NOT @RequiresToken: reading public data must work without credentials. */
 @Tag("smoke")
 @DisplayName("Users - anonymous read access")
 class PublicReadTests extends BaseApiTest {

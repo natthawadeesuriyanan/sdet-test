@@ -14,7 +14,7 @@ public final class TestConfig {
     }
 
     public static boolean headless() {
-        return Boolean.parseBoolean(setting("saucedemo.headless", "SAUCEDEMO_HEADLESS", "false"));
+        return Boolean.parseBoolean(setting("saucedemo.headless", "SAUCEDEMO_HEADLESS", "true"));
     }
 
     public static int timeoutMs() {
