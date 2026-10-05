@@ -51,6 +51,20 @@ Notes:
 - `docker-compose.yml` sits at the repo root, alongside `api-tests/.env`, so Docker Compose's automatic `.env` loading picks up `GOREST_API_TOKEN` without needing it exported manually — confirmed working in practice, not just assumed from Compose's documented behavior.
 - Each service bind-mounts its own `target/` to the host, so `--rm` deleting the container doesn't also delete Surefire reports or (for `ui-tests`) failure screenshots — those would otherwise be unrecoverable after a local Docker run, unlike on CI where `actions/upload-artifact` already covers this. A shared named volume caches Maven dependencies across runs so they aren't re-downloaded every time.
 
+### Optional: Allure report (stretch goal)
+
+Both suites generate Allure results (`target/allure-results`) via `allure-jupiter`, and CI generates the full HTML report (using the official `allure-commandline` npm package, not a third-party composite Action) and uploads it as a build artifact — `ui-allure-report` and `api-allure-report`, downloadable from any Actions run. Verified by downloading and opening both locally: full suite breakdown, 100% pass rate, the one skipped (known-defect) API test shown correctly.
+
+### Optional: Retry on flake (stretch goal)
+
+Only the three `performance_glitch_user`/timing-SLA tests in `ui-tests` (`@RetryingTest(3)`, via `junit-pioneer`) retry — nothing else. Rationale: these assert against a live, shared service's response time, where a single slow network blip is noise, not a regression; a consistent slowdown still fails all 3 attempts. Functional and known-defect assertions are never retried — a flaky functional test is a real bug to fix, not noise to filter out. `api-tests` has no retries at all, for the same reason it stays sequential (see below): masking a rate-limit-induced failure would be worse than seeing it.
+
+### Optional: Parallel execution (stretch goal)
+
+Enabled for `ui-tests` only: `junit-platform.properties` runs test classes concurrently (`classes.default = concurrent`) while methods within a class stay sequential (`mode.default = same_thread`), per Playwright's own guidance that Playwright/Browser objects aren't safe to share across threads. `BaseTest` uses `@TestInstance(PER_CLASS)` with non-static `Playwright`/`Browser` fields, so each test class gets its own independent instance rather than all three subclasses racing on one shared static field. Verified: total suite time dropped from 56.7s to 35.3s (all 38 tests still passing), with the new total close to the slowest individual class rather than the sum of all three — the expected signature of working parallelism, not just a config flag that silently did nothing.
+
+`api-tests` deliberately stays sequential — see `api-tests/README.md`: the live GoREST service has a shared 90 req/min rate limit per token, and parallelizing would make tests compete for that budget, turning rate-limit noise into false failures. This is an intentional scope boundary, not an oversight.
+
 ---
 
 ## Part 0 — Scenario Design
@@ -67,9 +81,10 @@ See [`test-coverage/`](./test-coverage) for the full scenario table (38 scenario
 Full detail: [`ui-tests/README.md`](./ui-tests/README.md)
 
 Highlights:
-- Page Object Model (`LoginPage`, `InventoryPage`, `CartPage`, `CheckoutPage`), resilient locators (`getByTestId` wired to the site's `data-test` attribute, `getByRole` elsewhere), fresh `BrowserContext` per test for isolation.
+- Page Object Model split into `locators` (element lookup, e.g. `LoginLocators`) and `actions` (behavior, e.g. `LoginActions`) per page, resilient locators (`getByTestId` wired to the site's `data-test` attribute, `getByRole` elsewhere), fresh `BrowserContext` per test for isolation.
 - Confirmed defects are automated as **known-defect regression tests** (`@Tag("known-defect")`): they assert the observed (broken) behavior rather than the "correct" behavior, so a future fix shows up as a test failure instead of silently passing either way. Full defect list with severity in `ui-tests/README.md`'s "Observed Defects Summary."
 - Performance scenarios (`performance_glitch_user` login/checkout, `standard_user` baseline) log elapsed time every run and only hard-fail when explicitly enabled, to avoid turning network/CI variance into flaky failures.
+- `@TestInstance(PER_CLASS)` with non-static `Playwright`/`Browser` fields in `BaseTest`, enabling safe class-level parallel execution — see "Optional: Parallel execution" below.
 
 ## Part 2 — API Automation (REST Assured + Java)
 
@@ -83,7 +98,7 @@ Highlights:
 
 ## Part 3 — CI
 
-Workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml). Assumption: the default branch is `main`, as already set in the starter file's trigger config (`push`/`pull_request` on `branches: [main]`), which was correct and left unchanged.
+Workflow: [`.github/workflows/cicd.yml`](./.github/workflows/cicd.yml). Assumption: the default branch is `main`, as already set in the starter file's trigger config (`push`/`pull_request` on `branches: [main]`), which was correct and left unchanged.
 
 ### Bugs found in `starter-kit/ci-broken.yml` and fixed
 
@@ -114,15 +129,15 @@ Workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml). Assumption: 
 
 ### Completed run
 
-*(Add a link to a completed, green Actions run here, e.g. `https://github.com/<you>/<repo>/actions/runs/<id>` — or a screenshot if the repository is private.)*
+[CI run on `main`](https://github.com/natthawadeesuriyanan/sdet-test/actions/runs/37316976494) — triggered by merging PR #4 (parallel execution) into `main`. All 4 jobs passed: UI Tests (Playwright), API Tests (REST Assured), UI Test Results (38 ran, 38 passed, 0 failed), API Test Results (56 ran, 55 passed, 1 skipped, 0 failed).
 
 ## Part 4 — AI-Assisted Workflow Notes
 
-**Tools used:** Claude — for Page Object / REST Assured boilerplate, Playwright-for-Java/JUnit 5 syntax (coming from TypeScript), locator and `pom.xml` review, and README drafting.
+**Tools and scope:** Claude, as an assistant across Parts 0–3 — translating established TypeScript/Playwright testing patterns into idiomatic Java/JUnit equivalents while ramping up on Java specifically, drafting Page Object / REST Assured boilerplate, and structuring this README. Test strategy, scenario priority, every defect's exact behavior, and whether a given fix actually worked were decided and verified by hand against the live site and pipeline — not generated or taken on faith.
 
-**A risky suggestion caught:** an input helper used `.fill()` for a checkout field used to reproduce a defect where typing overwrites a sibling field. `.fill()` sets the DOM value directly without per-keystroke events, so if the bug depends on a keystroke listener, the test could pass without exercising the real bug. I checked Playwright's docs on `fill()` vs `pressSequentially()` and switched that field to `pressSequentially()` so the test reproduces the defect the way a real user actually triggers it.
+**A documented fix that was never actually applied:** after debugging a CI failure (`ClassNotFoundException` in the Playwright-install step), the fix and its rationale were written into this README's bug table as resolved — but the real `cicd.yml` was never updated to match, and the exact same failure reappeared on the next pipeline run. I caught the gap by comparing a fresh Actions log against what the README claimed, not by trusting that account. Lesson: an AI's own running summary of "what was fixed" is a claim to verify against the actual file, not a fact, especially deep into a long multi-file session.
 
-**Not delegated:** the exact oracle values behind defect assertions — which buttons actually fail, exact error text, which `data-test` attributes exist. A wrong oracle doesn't fail loudly, it just asserts the wrong thing with false confidence, so every value was confirmed against the live site before being hard-coded.
+**Not delegated:** confirming that a described fix was genuinely present in the file it was supposed to change, for both CI config and test code. Several times a plausible, well-reasoned fix turned out to exist only in conversation, not in the file — caught only by re-running the real pipeline or suite and reading the actual result, never by re-reading the explanation of what should have happened.
 
 ---
 
@@ -134,6 +149,6 @@ Workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml). Assumption: 
 
 ## What I'd Do Differently With More Time
 
-- **UI:** resolve the two remaining open ambiguities (TC-34/35 case sensitivity and whitespace trimming; TC-30 sort-persistence) with the product team instead of leaving them undecided, and extend parallel test execution — Playwright Java isn't thread-safe across a shared `Browser` instance, so this needs a per-thread `Playwright`/`Browser` lifecycle rather than the current shared-static one.
-- **API:** add a second GoREST token to test cross-token isolation and the 403 response on writes, which isn't testable with a single token; add the "possible extensions" already listed in `api-tests/README.md` (injection-string storage, explicit-null handling, malformed pagination params).
-- **Both:** Allure (or equivalent) reporting published as a CI artifact, and a documented, narrowly-scoped retry policy (only for genuinely environment-sensitive assertions like response-time budgets, never for functional or known-defect assertions) rather than leaving retries out entirely.
+- **UI:** resolve the two remaining open ambiguities (TC-34/35 case sensitivity and whitespace trimming; TC-30 sort-persistence) with the product team instead of leaving them undecided.
+- **API:** add a second GoREST token to test cross-token isolation and the 403 response on writes, which isn't testable with a single token; add the "possible extensions" already listed in `api-tests/README.md` (injection-string storage, explicit-null handling, malformed pagination params); revisit whether a bounded, rate-limit-aware form of parallelism is worth the added complexity, now that `ui-tests` has a working parallel-execution pattern to borrow from.
+- **Both:** an `environment.properties` file for Allure so the report records the OS/Java version a run used, and extending parallel execution's CI config to account for GitHub-hosted runners' smaller CPU core count, which may not show the same speedup seen locally.
