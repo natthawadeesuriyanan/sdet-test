@@ -20,6 +20,14 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Fix (found while verifying the completed run, not one of the 8 seeded bugs):
+# without this, GITHUB_TOKEN defaults to insufficient permissions for
+# mikepenz/action-junit-report to create a Check Run, failing with
+# "Resource not accessible by integration" even though the job itself passes.
+permissions:
+  contents: read
+  checks: write
+  
 jobs:
   # Bug #7: the starter file ran UI and API tests as sequential steps in one
   # job. Combined with "|| true" (bug #3) masking UI failures, this meant a
