@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "User list",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "name", "email", "gender", "status"],
+    "additionalProperties": false,
+    "properties": {
+      "id":     { "type": "integer", "minimum": 1 },
+      "name":   { "type": "string" },
+      "email":  { "type": "string" },
+      "gender": { "enum": ["male", "female"] },
+      "status": { "enum": ["active", "inactive"] }
+    }
+  }
+}

@@ -1,0 +1,151 @@
+# Fixed and extended version of starter-kit/ci-broken.yml
+# See README.md "Part 3 — CI" for the numbered list of bugs found and fixed here.
+#
+# Assumption: the default branch is named `main` (as in the starter file's
+# trigger config below, which was already correct and left unchanged).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Bug #8: no concurrency control. The API suite hits a shared, rate-limited
+# live service (90 req/min per token — see api-tests/README.md). Two overlapping
+# runs against the same token risk spurious 429s unrelated to real failures.
+# This cancels any in-progress run for the same branch when a new one starts.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Bug #7: the starter file ran UI and API tests as sequential steps in one
+  # job. Combined with "|| true" (bug #3) masking UI failures, this meant a
+  # real UI failure would still let the job "pass" — and if that mask were
+  # simply removed without restructuring, a failing UI step would stop the
+  # job before the API step ever ran, leaving API results unknown. Splitting
+  # into two independent jobs means either suite's pass/fail is accurate and
+  # visible on its own, and one suite's failure never hides or blocks the other.
+  ui-tests:
+    name: UI Tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      # Bug #1: no checkout step — the runner had no project files to test.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Bug #2: starter used java-version: '8'. This project targets Java 17
+      # (see ui-tests/pom.xml, maven.compiler.release=17).
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      # Bug #6: no step installed Playwright's browser binaries. Without this,
+      # the suite fails immediately with "Executable doesn't exist" on first
+      # browser launch.
+      - name: Install Playwright browsers
+        working-directory: ui-tests
+        run: mvn -q compile exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
+
+      # Bug #4: no working-directory. The repo is a multi-module layout
+      # (ui-tests/, api-tests/ each with their own pom.xml); running `mvn`
+      # from the repo root finds no pom.xml at all.
+      # Bug #3: starter used "mvn clean test || true", which makes this step
+      # succeed even when tests genuinely fail — a green pipeline that proves
+      # nothing. Removed so a real failure actually fails the job.
+      - name: Run UI tests
+        working-directory: ui-tests
+        env:
+          SAUCEDEMO_HEADLESS: "true"
+        run: mvn clean test
+
+      # Extension: publish a human-readable test summary directly on the
+      # Actions run page (pass/fail counts, failing test names and messages)
+      # so a failing run is diagnosable at a glance, without downloading and
+      # opening raw Surefire XML.
+      - name: Publish UI test summary
+        if: always()
+        uses: mikepenz/action-junit-report@v6
+        with:
+          report_paths: 'ui-tests/target/surefire-reports/TEST-*.xml'
+          check_name: 'UI Test Results'
+          fail_on_failure: false # the "Run UI tests" step above already fails the job on a real failure; this step only reports, it doesn't gate
+
+      # Extension (not a seeded bug): upload failure screenshots as an
+      # artifact so a failing run is diagnosable from the Actions tab alone,
+      # without re-running locally. BaseTest already saves these to
+      # target/screenshots/ on failure (see ui-tests/README.md); without this
+      # step they were being discarded with the runner.
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-failure-screenshots
+          path: ui-tests/target/screenshots/
+          if-no-files-found: ignore
+
+      # Extension: always publish the Surefire test report, pass or fail, so
+      # results are inspectable without a local re-run.
+      - name: Upload UI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-surefire-reports
+          path: ui-tests/target/surefire-reports/
+          if-no-files-found: ignore
+
+  api-tests:
+    name: API Tests (REST Assured)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      # Bug #5: the starter never injected GOREST_API_TOKEN. Without it, the
+      # suite's own MissingTokenException design (see api-tests/README.md)
+      # would fail every @RequiresToken test — correct behavior, but a
+      # confusing wall of failures instead of one clear, early signal. This
+      # step fails the job immediately with an explicit message if the repo
+      # secret is missing, e.g. on a fork PR that can't see secrets.
+      - name: Verify required secret is present
+        env:
+          TOKEN_CHECK: ${{ secrets.GOREST_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN_CHECK" ]; then
+            echo "::error::GOREST_API_TOKEN secret is not set. Add it in repo settings (Settings > Secrets and variables > Actions) before this job can run."
+            exit 1
+          fi
+
+      - name: Run API tests
+        working-directory: api-tests
+        env:
+          GOREST_API_TOKEN: ${{ secrets.GOREST_API_TOKEN }}
+        run: mvn clean test
+
+      - name: Publish API test summary
+        if: always()
+        uses: mikepenz/action-junit-report@v6
+        with:
+          report_paths: 'api-tests/target/surefire-reports/TEST-*.xml'
+          check_name: 'API Test Results'
+          fail_on_failure: false # the "Run API tests" step above already fails the job on a real failure; this step only reports, it doesn't gate
+
+      - name: Upload API test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-surefire-reports
+          path: api-tests/target/surefire-reports/
+          if-no-files-found: ignore

@@ -1,0 +1,53 @@
+name: API tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"   # nightly, catches drift on the live service
+
+# One run at a time: all runs share one token's rate-limit budget on a live service.
+concurrency:
+  group: gorest-api-tests
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # Fail loudly (not skip) when the secret is missing, e.g. on a fork PR.
+      - name: Check GOREST_API_TOKEN secret
+        env:
+          GOREST_API_TOKEN: ${{ secrets.GOREST_API_TOKEN }}
+        run: |
+          if [ -z "$GOREST_API_TOKEN" ]; then
+            echo "::error::Repository secret GOREST_API_TOKEN is not configured (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Run API tests
+        env:
+          GOREST_API_TOKEN: ${{ secrets.GOREST_API_TOKEN }}   # injected as env var only, never echoed
+        run: mvn -B -ntp test
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 14
