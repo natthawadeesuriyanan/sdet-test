@@ -14,27 +14,41 @@ import com.saucedemo.pages.locators.CartLocators;
 import com.saucedemo.pages.locators.CheckoutLocators;
 import com.saucedemo.pages.locators.InventoryLocators;
 import com.saucedemo.pages.locators.LoginLocators;
-import com.saucedemo.helper.CheckoutTestData;
+
 import org.junit.jupiter.api.extension.AfterTestExecutionCallback;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInstance;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+/**
+ * Parallel execution note: Playwright objects are NOT safe to share across
+ * threads (see playwright.dev/java/docs/test-runners). Per Playwright's own
+ * guidance, this class uses @TestInstance(PER_CLASS) with non-static
+ * playwright/browser fields, so each test CLASS gets its own independent
+ * instance rather than all subclasses sharing one static field (the bug a
+ * static field here would cause: two classes running concurrently on
+ * different threads would race on the same memory location). Combined with
+ * junit-platform.properties (same_thread within a class, concurrent across
+ * classes), this launches one browser per class — same performance as
+ * before — while remaining correct under parallel execution.
+ */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class BaseTest {
-    protected static Playwright playwright;
-    protected static Browser browser;
+    protected Playwright playwright;
+    protected Browser browser;
 
     protected BrowserContext context;
     protected Page page;
-    protected LoginLocators loginLocators;
     protected LoginActions loginActions;
-    protected InventoryLocators inventoryLocators;
+    protected LoginLocators loginLocators;
     protected InventoryActions inventoryActions;
+    protected InventoryLocators inventoryLocators;
     protected CartLocators cartLocators;
     protected CartActions cartActions;
     protected CheckoutLocators checkoutLocators;
@@ -62,14 +76,14 @@ public abstract class BaseTest {
     };
 
     @BeforeAll
-    static void startBrowser() {
+    void startBrowser() {
         playwright = Playwright.create();
         playwright.selectors().setTestIdAttribute("data-test"); 
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(TestConfig.headless()));
     }
 
     @AfterAll
-    static void stopBrowser() {
+    void stopBrowser() {
         if (browser != null) {
             browser.close();
         }
@@ -84,15 +98,17 @@ public abstract class BaseTest {
         page = context.newPage();
         page.setDefaultTimeout(TestConfig.timeoutMs());
         page.setDefaultNavigationTimeout(Math.max(20_000, TestConfig.timeoutMs()));
+
         loginLocators = new LoginLocators(page);
         loginActions = new LoginActions(page, loginLocators);
+        loginActions.open(TestConfig.baseUrl());   
         inventoryLocators = new InventoryLocators(page);
-        inventoryActions = new InventoryActions(inventoryLocators);
         cartLocators = new CartLocators(page);
-        cartActions = new CartActions(cartLocators);
         checkoutLocators = new CheckoutLocators(page);
         checkoutActions = new CheckoutActions(checkoutLocators);
-        loginActions.open(TestConfig.baseUrl());
+
+        inventoryActions = new InventoryActions(inventoryLocators);
+        cartActions = new CartActions(cartLocators);
     }
 
     @AfterEach
@@ -104,8 +120,9 @@ public abstract class BaseTest {
 
     protected InventoryActions loginAs(String username) {
         loginActions.login(username, TestConfig.PASSWORD);
-        inventoryActions.waitUntilLoaded();
-        return inventoryActions;
+        InventoryActions inventory = new InventoryActions(inventoryLocators);
+        inventory.waitUntilLoaded();
+        return inventory;
     }
 
     protected CartActions addAndOpenCart(InventoryActions inventory, String... productNames) {
@@ -113,18 +130,22 @@ public abstract class BaseTest {
             inventory.addProduct(productName);
         }
         inventory.openCart();
-        return cartActions;
+        return new CartActions(cartLocators);
     }
 
-    protected CheckoutActions beginCheckout(CartActions cart, String first, String last, String postal) {
+    protected CheckoutActions beginCheckout(CartActions cart) {
         cart.checkout();
-        checkoutActions.enterInformation(first, last, postal);
+        checkoutActions = new CheckoutActions(checkoutLocators);
+        checkoutActions.enterInformation("Ada", "Lovelace", "94105");
         checkoutActions.continueToOverview();
         return checkoutActions;
     }
 
-    protected CheckoutActions beginCheckout(CartActions cart) {
-        CheckoutTestData data = CheckoutTestData.unique();
-        return beginCheckout(cart, data.firstName(), data.lastName(), data.postalCode());
+    protected CheckoutActions beginCheckout(CartActions cart, String first, String last, String postal) {
+        cart.checkout();
+        checkoutActions = new CheckoutActions(checkoutLocators);
+        checkoutActions.enterInformation(first, last, postal);
+        checkoutActions.continueToOverview();
+        return checkoutActions;
     }
 }
