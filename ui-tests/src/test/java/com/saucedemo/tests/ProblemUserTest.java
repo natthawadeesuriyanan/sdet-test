@@ -40,8 +40,8 @@ class ProblemUserTest extends BaseTest {
         checkout.enterInformation("Ida", "Lover", "A1A 1A1");
         // Confirmed defect (highest severity in this suite): typing in the Last
         // Name field on the checkout form shifts the text into the First Name
-        // field instead, leaving Last Name empty. If fixed, this
-        // assertion will pass and should be uncomment out the following two lines to assert normal field behavior:
+        // field instead, leaving Last Name empty.
+        // TODO:  If fixed, should be uncomment out the following two lines to assert normal field behavior:
         // assertEquals("Ida", checkoutLocators.firstName().inputValue());
         // assertEquals("Lover", checkoutLocators.lastName().inputValue());
         checkout.continueToOverview();
@@ -57,7 +57,7 @@ class ProblemUserTest extends BaseTest {
         }
         // Confirmed defect: only 3 of the 6 "Add to cart" buttons actually add
         // their product to the cart. The other 3 buttons are broken and do not add their product.
-        // TODO: once this defect is fixed, uncomment the line below to verify.
+        // TODO: if defect is fixed, uncomment the line below to verify.
         //PlaywrightAssertions.assertThat(inventoryLocators.cartBadge()).hasText("6");
 
     }
@@ -73,7 +73,7 @@ class ProblemUserTest extends BaseTest {
         inventory.removeProduct("Sauce Labs Backpack");
 
         PlaywrightAssertions.assertThat(inventoryLocators.productButton("Sauce Labs Backpack")).hasText("Remove");
-        // If the defect is fixed, change the expected text to 1 instead of 2.
+        // TODO: If the defect is fixed, change the expected text to 1 instead of 2.
         PlaywrightAssertions.assertThat(inventoryLocators.cartBadge()).hasText("2");
     }
 
@@ -97,7 +97,7 @@ class ProblemUserTest extends BaseTest {
     assertEquals(expectedProductCount, sources.size());
     // Confirmed defect: all product images point to the same broken/mismatched
     // source instead of each product having its own image. 
-    // If the defect is fixed, change the expected size to be equal to the product count.
+    // TODO: If the defect is fixed, change the expected size to be equal to the product count.
     assertEquals(1, uniqueSources.size(), "Expected all product images to share the same broken source");
     }
 
