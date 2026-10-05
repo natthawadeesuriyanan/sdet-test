@@ -57,7 +57,7 @@ class ProblemUserTest extends BaseTest {
         }
         // Confirmed defect: only 3 of the 6 "Add to cart" buttons actually add
         // their product to the cart. The other 3 buttons are broken and do not add their product.
-        // TODO: once this defect is fixed, uncomment the line below to verify
+        // TODO: once this defect is fixed, uncomment the line below to verify.
         //PlaywrightAssertions.assertThat(inventoryLocators.cartBadge()).hasText("6");
 
     }

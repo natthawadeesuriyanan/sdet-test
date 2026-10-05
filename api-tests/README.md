@@ -7,7 +7,7 @@ It covers the CRUD lifecycle, validation errors, authentication, not-found cases
 
 ```bash
 # 1. Token - pick ONE method
-cp .env.example .env              # then edit .env  (git-ignored)
+cp .env.example .env              # in the repo root (D:\sdet-test); then edit .env (git-ignored)
 export GOREST_API_TOKEN=xxxx       # or an environment variable
 mvn test -DGOREST_API_TOKEN=xxxx   # or a JVM property
 
@@ -25,9 +25,11 @@ Requirements: JDK 17+ and Maven 3.9+.
 |---|---|---|
 | JVM property `-DGOREST_API_TOKEN` | ad-hoc runs | 1 |
 | Environment variable `GOREST_API_TOKEN` | **CI** | 2 |
-| `.env` file in the project root | **local runs** | 3 |
+| `.env` file in the working directory or **any parent folder** (normally the repo root, next to `api-tests/` and `ui-tests/`) | **local runs** | 3 |
 
 * `.env` is listed in `.gitignore`. Only `.env.example` is committed.
+* `Config` looks for `.env` in the working directory and then walks up the parent folders. One `.env` in the repo root therefore works whether the run starts from the root, from `api-tests/`, from Maven or from the IDE test runner.
+* The first log line of every run shows where the token came from, for example `token=present .env=D:\sdet-test\.env`. If it says `token=MISSING .env=<none found ...>`, the file is not in the working directory or any parent.
 * In logs and failure dumps, the `Authorization` header is masked (`Bearer ****abcd`).
 * **A missing token fails the run. It never skips tests.** Any class annotated with `@RequiresToken` fails in `beforeAll` with a `MissingTokenException` that explains how to supply the token. `PublicReadTests` is the only class without that annotation, because anonymous reads should work without credentials.
 * In CI, the token is stored as the repository secret `GOREST_API_TOKEN` and injected only as an environment variable. Before Maven runs, a separate workflow step fails the job if the secret is missing (for example on a fork PR).
@@ -143,6 +145,7 @@ Exactly one test is `@Disabled`, and only for a confirmed defect. A suite that d
 | Data is wiped and reseeded every 24 hours; other users change data all the time | No assertions on ordering, totals, or specific seed records. List tests check only properties that must hold for whatever the page contains. Cleanup accepts 404. |
 | Filters are partial matches (`LIKE`) | The suite filters by unique values, checks that our record is *contained* in the results, and narrows to exact matches on the client side where needed. |
 | PUT is documented as a full replace; partial PUT behaviour is unspecified | Update tests always send the full set of mutable fields. |
+| **Transient 502 on writes:** the live service sometimes returns `502 Bad Gateway` with `Retry-After: 60` for every POST, while GETs keep working | POST is deliberately **not** retried on 5xx, because the server may already have created the record and a retry could duplicate it. Tests fail loudly instead. A 502 on the no-token case, where 401 is expected, rules out authentication. Wait at least 60 s and rerun; if it persists, reproduce in the GoREST web console. Tests are never changed to accept a 502. |
 | Exact 401 message text varies (`Invalid token`, `Authentication failed`) | The suite asserts status, schema and a non-blank message, not the wording. |
 
 ## Possible extensions
