@@ -30,7 +30,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Users - validation errors")
 class UserValidationTests extends BaseApiTest {
 
-    // ---------- create ----------
     static Stream<Arguments> missingRequiredField() {
         return Stream.of(
                 Arguments.of("name", (UnaryOperator<User>) u -> u.withName(null)),
@@ -156,8 +155,6 @@ class UserValidationTests extends BaseApiTest {
         assertThat(r.statusCode()).as("documented 415, observed 422").isIn(415, 422);
         assertThat(userSteps.findByEmail(email)).as("no user persisted").isEmpty();
     }
-
-    // ---------- update ----------
 
     @Test
     @DisplayName("PUT with invalid email -> 422 and the stored user is unchanged (no partial write)")

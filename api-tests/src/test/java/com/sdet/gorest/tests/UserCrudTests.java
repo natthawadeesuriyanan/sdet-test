@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UserCrudTests extends BaseApiTest {
 
     @Test
-  //  @DisplayName("POST /users -> 201, server-assigned id, payload echoed, schema valid")
+    @DisplayName("POST/users -> 201, server-assigned id, payload echoed, schema valid")
     void post_user_returns_correct_response() {
         User payload = UserFactory.randomUser();
         Response response = users.create(payload);
@@ -32,7 +32,7 @@ class UserCrudTests extends BaseApiTest {
     }
 
     @Test
-   // @DisplayName("GET /users/{id} returns exactly what was created (persistence, not just echo)")
+    @DisplayName("GET/users/{id} returns exactly what was created (persistence, not just echo)")
     void get_user_returns_correct_record() {
         User created = userSteps.createRandomUser();
         User fetched = assertUserResponse(users.get(created.getId()), 200);
@@ -40,7 +40,7 @@ class UserCrudTests extends BaseApiTest {
     }
 
     @Test
-   // @DisplayName("PUT /users/{id} replaces every mutable field; change is persisted and id is stable")
+    @DisplayName("PUT/users/{id} replaces every mutable field; change is persisted and id is stable")
     void put_updates_all_existing_fields() {
         User original = userSteps.createRandomUser();
         User changes = UserFactory.differentFrom(original);
@@ -51,7 +51,7 @@ class UserCrudTests extends BaseApiTest {
     }
 
     @Test
-   // @DisplayName("DELETE /users/{id} -> 204 empty body; afterwards GET and DELETE are 404 (not idempotent-200)")
+    @DisplayName("DELETE/users/{id} -> 204 empty body; afterwards GET and DELETE are 404 (not idempotent-200)")
     void delete_user_then_get_deleted_again() {
         User created = userSteps.createRandomUser();
         Response response = users.delete(created.getId());
@@ -62,7 +62,7 @@ class UserCrudTests extends BaseApiTest {
     }
 
     @Test
-//    @DisplayName("POST /users ignores a client-supplied id (no mass assignment / id hijack)")
+    @DisplayName("POST/users ignores a client-supplied id (no mass assignment / id hijack)")
     void create_user_ignores_provided_id() {
         User user1 = userSteps.createRandomUser();
         User payload = UserFactory.randomUser().withId(user1.getId());
@@ -72,7 +72,7 @@ class UserCrudTests extends BaseApiTest {
     }
 
     @Test
-   // @DisplayName("PUT /users/{id} ignores an id in the body - the path id wins, the other user is untouched")
+    @DisplayName("PUT/users/{id} ignores an id in the body - the path id wins, the other user is untouched")
     void update_user_ignores_provided_id() {
         User user1 = userSteps.createRandomUser();
         User user2 = userSteps.createRandomUser();
@@ -84,7 +84,7 @@ class UserCrudTests extends BaseApiTest {
 
     @ParameterizedTest(name = "name round-trips unchanged: {0}")
     @ValueSource(strings = {"สมชาย ใจดี", "Rosé Müller-Øyster", "Pitér O'Connor-Łukasz"})
- //   @DisplayName("Unicode / special characters in name survive create + read (UTF-8 end to end)")
+    @DisplayName("Unicode / special characters in name survive create + read (UTF-8 end to end)")
     void unicode_names_round_trip(String baseName) {
         User payload = UserFactory.randomUser().withName(baseName + " " + UserFactory.uniqueTag());
         User created = assertUserResponse(users.create(payload), 201);

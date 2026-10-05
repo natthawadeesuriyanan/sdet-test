@@ -24,7 +24,7 @@ class UserAuthTests extends BaseApiTest {
 
     @ParameterizedTest(name = "POST with auth={0} -> 401")
     @EnumSource(value = Auth.class, names = {"NONE", "INVALID"})
-   // @DisplayName("POST /users without a valid token -> 401 and no user is created")
+    @DisplayName("POST /users without a valid token -> 401 and no user is created")
     void post_user_without_token(Auth auth) {
         User payload = UserFactory.randomUser();
         assertErrorMessage(users.create(payload, auth), 401);
@@ -39,7 +39,7 @@ class UserAuthTests extends BaseApiTest {
 
     @ParameterizedTest(name = "PUT with auth={0} -> {1}")
     @MethodSource("unauthorisedWrite")
-   // @DisplayName("PUT /users/{id} without a valid token is rejected (401 / 404) and the user is unchanged")
+    @DisplayName("PUT /users/{id} without a valid token is rejected (401 / 404) and the user is unchanged")
     void put_without_token(Auth auth, int expectedStatus) {
         User original = userSteps.createRandomUser();
         assertErrorMessage(users.update(original.getId(), UserFactory.differentFrom(original), auth), expectedStatus);
@@ -48,7 +48,7 @@ class UserAuthTests extends BaseApiTest {
 
     @ParameterizedTest(name = "DELETE with auth={0} -> {1}")
     @MethodSource("unauthorisedWrite")
-    //@DisplayName("DELETE /users/{id} without a valid token is rejected (401 / 404) and the user still exists")
+    @DisplayName("DELETE /users/{id} without a valid token is rejected (401 / 404) and the user still exists")
     void delete_without_token(Auth auth, int expectedStatus) {
         User original = userSteps.createRandomUser();
 
@@ -57,7 +57,7 @@ class UserAuthTests extends BaseApiTest {
     }
 
     @Test
-  //  @DisplayName("POST /users A user created with our token is invisible to anonymous readers (GoREST per-token isolation)")
+    @DisplayName("POST /users A user created with our token is invisible to anonymous readers (GoREST per-token isolation)")
     void other_can_not_see_mycreated_user() {
         User created = userSteps.createRandomUser();
 
