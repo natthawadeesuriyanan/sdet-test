@@ -56,9 +56,13 @@ jobs:
       # Bug #6: no step installed Playwright's browser binaries. Without this,
       # the suite fails immediately with "Executable doesn't exist" on first
       # browser launch.
+      # Bug #9 (see README "Part 3 — CI"): without -Dexec.classpathScope=test,
+      # exec-maven-plugin uses only the compile+runtime classpath, which
+      # doesn't include Playwright (scope: test in pom.xml), causing
+      # ClassNotFoundException: com.microsoft.playwright.CLI.
       - name: Install Playwright browsers
         working-directory: ui-tests
-        run: mvn -q compile exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
+        run: mvn test-compile exec:java -e -Dexec.classpathScope=test -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
 
       # Bug #4: no working-directory. The repo is a multi-module layout
       # (ui-tests/, api-tests/ each with their own pom.xml); running `mvn`
