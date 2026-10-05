@@ -27,7 +27,7 @@ concurrency:
 permissions:
   contents: read
   checks: write
-  
+
 jobs:
   # Bug #7: the starter file ran UI and API tests as sequential steps in one
   # job. Combined with "|| true" (bug #3) masking UI failures, this meant a
@@ -58,9 +58,9 @@ jobs:
       # browser launch.
       - name: Install Playwright browsers
         working-directory: ui-tests
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: mvn test-compile exec:java -e -Dexec.classpathScope=test -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"      # Bug #4: no working-directory. The repo is a multi-module layout
+        run: mvn -q compile exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
+
+      # Bug #4: no working-directory. The repo is a multi-module layout
       # (ui-tests/, api-tests/ each with their own pom.xml); running `mvn`
       # from the repo root finds no pom.xml at all.
       # Bug #3: starter used "mvn clean test || true", which makes this step
@@ -105,6 +105,31 @@ jobs:
         with:
           name: ui-surefire-reports
           path: ui-tests/target/surefire-reports/
+          if-no-files-found: ignore
+
+      # Extension (stretch goal): generate a full Allure HTML report from the
+      # results ui-tests/pom.xml is already configured to produce in
+      # target/allure-results. Uses the official allure-commandline npm
+      # package rather than a third-party composite Action, to avoid relying
+      # on one that may not be actively maintained.
+      - name: Set up Node (for Allure CLI)
+        if: always()
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate Allure report
+        if: always()
+        run: |
+          npm install -g allure-commandline
+          allure generate ui-tests/target/allure-results --clean -o ui-tests/target/allure-report
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-allure-report
+          path: ui-tests/target/allure-report/
           if-no-files-found: ignore
 
   api-tests:
@@ -156,4 +181,27 @@ jobs:
         with:
           name: api-surefire-reports
           path: api-tests/target/surefire-reports/
+          if-no-files-found: ignore
+
+      # Extension (stretch goal): same Allure report generation as ui-tests —
+      # see that job's comment for why allure-commandline (npm) is used
+      # instead of a third-party composite Action.
+      - name: Set up Node (for Allure CLI)
+        if: always()
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate Allure report
+        if: always()
+        run: |
+          npm install -g allure-commandline
+          allure generate api-tests/target/allure-results --clean -o api-tests/target/allure-report
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-allure-report
+          path: api-tests/target/allure-report/
           if-no-files-found: ignore

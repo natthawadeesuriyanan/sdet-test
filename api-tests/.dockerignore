@@ -1,0 +1,9 @@
+# Critical: .env holds a real GOREST_API_TOKEN. Without this line, docker
+# build's "COPY . ." would bake the live token into the image layer, where
+# it would persist even if the image is later pushed or shared — a secret
+# leak independent of .gitignore, which only protects the git history.
+.env
+
+target/
+.git/
+*.log
