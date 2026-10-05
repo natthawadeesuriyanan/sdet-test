@@ -77,6 +77,10 @@ Layering: **tests → UserSteps → UsersClient → ApiClient → REST Assured**
    * A 404 during cleanup counts as success.
 4. **Ownership guarantee:** cleanup deletes **only** ids from the registry, meaning ids returned by this run's own 201 responses. The suite never updates or deletes users it did not create. Mutation tests always create their own target first.
 
+## Allure Report
+
+The suite generates Allure results (`target/allure-results`) via `allure-jupiter`; results directory is set in `src/test/resources/allure.properties`. CI generates the full HTML report (via the official `allure-commandline` npm package) and uploads it as the `api-allure-report` artifact on every run — includes the one `@Disabled` known-defect test shown correctly as skipped, not failed. To view locally: `allure generate target/allure-results --clean -o target/allure-report`, then `allure open target/allure-report` (opening `index.html` directly from the filesystem will not load correctly — it needs to be served).
+
 ## Scenarios (56 test executions across 33 test methods; 1 disabled as a known defect)
 
 | Area | Scenario |
@@ -123,7 +127,7 @@ Every red test was triaged first: *is my test wrong, or does the system differ f
 
 | # | Severity | Finding | Evidence | Handling |
 |---|---|---|---|---|
-| D1 | Medium | **Email uniqueness is case-sensitive.** `A@X.COM` can be registered while `a@x.com` exists (201 instead of 422), so one address can own two accounts. The domain part is case-insensitive under RFC 5321, and almost every real system normalises the whole address. | `UserValidationTests.duplicate_email_ignores_case` | Assertion kept as the desired contract; test marked `@Disabled` as a known defect with the reason in code. Needs a product decision on email normalisation. Re-enable once fixed. The accidental duplicate was still cleaned up, because ids are registered on the 201 before any assertion runs. |
+| D1 | Medium | **Email uniqueness is case-sensitive** — `A@X.COM` can be registered while `a@x.com` exists (201 instead of 422), letting one address own two accounts. | `duplicate_email_ignores_case` | Treated as a genuine defect, not accepted behavior: per RFC 5321 the domain part is case-insensitive, and almost every real system normalises the whole address before checking uniqueness. The assertion is kept as the desired contract, and the test is marked `@Disabled` with the reason documented in code — not silently skipped. Re-enabling requires a product decision on email normalisation. The accidental duplicate created during the test run was still cleaned up correctly, since ids are registered in `TestDataRegistry` on the 201 response before any assertion runs. |
 
 ### Documentation vs live behaviour
 
@@ -156,6 +160,6 @@ Exactly one test is `@Disabled`, and only for a confirmed defect. A suite that d
 * Malformed `Authorization` headers (`Bearer` with no token, `Basic ...`) and the `?access-token=` query transport.
 * The `Location` header on 201, which the docs mention.
 * A second token (`GOREST_API_TOKEN_SECONDARY`) to test the 403 response and cross-token isolation for writes.
-* Allure reporting, with the exchange transcript attached to each failed test.
+* Attaching the full `HttpExchangeRecorder` transcript to each failed test's Allure result, not just printing it to the console — Allure reporting itself is already implemented (see "Allure Report" above), this would extend it.
 * Contract tests generated from an OpenAPI spec, if GoREST publishes one.
 * Using `?force_status=429/503` to unit-test the retry policy against the real service.
