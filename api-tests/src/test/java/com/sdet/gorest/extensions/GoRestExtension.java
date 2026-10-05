@@ -40,8 +40,8 @@ public class GoRestExtension implements BeforeAllCallback, BeforeEachCallback, A
     public void beforeAll(ExtensionContext ctx) {
         if (!bannerPrinted) {
             bannerPrinted = true;
-            LOG.info("GoREST run id={} baseUrl={} token={}", RunContext.runId(), Config.baseUrl(),
-                    Config.hasToken() ? "present" : "MISSING");
+            LOG.info("GoREST run id={} baseUrl={} token={} .env={}", RunContext.runId(), Config.baseUrl(),
+                    Config.hasToken() ? "present" : "MISSING", Config.dotenvLocation());
         }
         if (AnnotationSupport.isAnnotated(ctx.getTestClass(), RequiresToken.class)) {
             Config.requireToken(); // throws MissingTokenException -> every test in the class FAILS

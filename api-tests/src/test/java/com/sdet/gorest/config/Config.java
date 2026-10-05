@@ -2,22 +2,44 @@ package com.sdet.gorest.config;
 
 import io.github.cdimascio.dotenv.Dotenv;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Optional;
 
 /**
  * Central configuration. Lookup order for every key:
  * 1. JVM system property (-DGOREST_API_TOKEN=...)
  * 2. OS environment variable (used by CI)
- * 3. Local .env file in the project root (git-ignored, for local runs)
+ * 3. Local .env file (git-ignored, for local runs). Searched for in the working directory and
+ *    then in each parent directory, so it works whether the .env sits in this module (api-tests/)
+ *    or in the repository root next to ui-tests/, and whether Maven or the IDE starts the run.
  */
 public final class Config {
 
     public static final String TOKEN_KEY = "GOREST_API_TOKEN";
-
+    private static final Path DOTENV_DIR = findDotenvDir();
     private static final Dotenv DOTENV = Dotenv.configure()
+            .directory(DOTENV_DIR != null ? DOTENV_DIR.toString() : "./")
             .ignoreIfMissing()
             .ignoreIfMalformed()
             .load();
+
+    /** Where the .env file was found, for diagnostics. */
+    public static String dotenvLocation() {
+        return DOTENV_DIR != null
+                ? DOTENV_DIR.resolve(".env").toString()
+                : "<none found from " + Paths.get(System.getProperty("user.dir")).toAbsolutePath() + " upwards>";
+    }
+
+    private static Path findDotenvDir() {
+        for (Path dir = Paths.get(System.getProperty("user.dir")).toAbsolutePath(); dir != null; dir = dir.getParent()) {
+            if (Files.isRegularFile(dir.resolve(".env"))) {
+                return dir;
+            }
+        }
+        return null;
+    }
 
     private Config() {
     }
