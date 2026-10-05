@@ -50,8 +50,9 @@ jobs:
       # browser launch.
       - name: Install Playwright browsers
         working-directory: ui-tests
-        run: mvn -q compile exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
-
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: mvn compile exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
       # Bug #4: no working-directory. The repo is a multi-module layout
       # (ui-tests/, api-tests/ each with their own pom.xml); running `mvn`
       # from the repo root finds no pom.xml at all.
