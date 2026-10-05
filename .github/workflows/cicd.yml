@@ -52,8 +52,7 @@ jobs:
         working-directory: ui-tests
         env:
           DEBIAN_FRONTEND: noninteractive
-        run: mvn compile exec:java -e -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"
-      # Bug #4: no working-directory. The repo is a multi-module layout
+        run: mvn test-compile exec:java -e -Dexec.classpathScope=test -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium"      # Bug #4: no working-directory. The repo is a multi-module layout
       # (ui-tests/, api-tests/ each with their own pom.xml); running `mvn`
       # from the repo root finds no pom.xml at all.
       # Bug #3: starter used "mvn clean test || true", which makes this step
