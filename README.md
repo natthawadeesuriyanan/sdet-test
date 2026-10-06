@@ -131,6 +131,30 @@ Workflow: [`.github/workflows/cicd.yml`](./.github/workflows/cicd.yml). Assumpti
 
 [CI run on `main`](https://github.com/natthawadeesuriyanan/sdet-test/actions/runs/37316976494) — triggered by merging PR #4 (parallel execution) into `main`. All 4 jobs passed: UI Tests (Playwright), API Tests (REST Assured), UI Test Results (38 ran, 38 passed, 0 failed), API Test Results (56 ran, 55 passed, 1 skipped, 0 failed).
 
+### On-demand test runs via PR comments
+
+A second workflow, [`.github/workflows/pr-command.yml`](./.github/workflows/pr-command.yml), lets a trusted collaborator trigger a specific test run from a PR comment, instead of waiting for the full suite or re-running everything locally:
+
+```
+/ui-test                              → all UI tests, Chromium
+/ui-test core-flow-test               → CoreFlowTest only, Chromium
+/ui-test core-flow-test browser chrome    → CoreFlowTest on Google Chrome
+/ui-test all browser chrome,msedge    → all UI tests on Chrome and Edge, in parallel
+/api-test                             → all API tests
+/api-test user-validation-tests       → UserValidationTests only
+/ui-test help, /api-test help         → usage and the list of available test classes
+```
+
+The bot reacts with 🚀, posts a "running" status on the PR's head commit, and comments back a pass/fail table per browser (or per API suite) with a link to the full run — so a reviewer sees the result without leaving the PR.
+
+**Security model** (this runs with the base repo's permissions, so it's deliberately restrictive):
+- only comments from `OWNER`/`MEMBER`/`COLLABORATOR` are honoured; anyone else gets a polite refusal, not silent ignoring;
+- the comment body is validated against an allowlist and never interpolated directly into a shell command;
+- `/ui-test` runs get a read-only token and no secrets at all;
+- `/api-test` is refused outright on PRs from forks, because it needs `GOREST_API_TOKEN` — a fork could otherwise read a secret it shouldn't have access to just by commenting.
+
+**Multi-browser support** (`browser chrome,msedge`, `firefox`, `webkit`) required adding `TestConfig.browser()` and a `launchBrowser()` switch in `BaseTest` — the workflow passes the selection as `-Dsaucedemo.browser`, which only has an effect because that code exists; without it, the flag would silently do nothing and every run would still launch Chromium.
+
 ## Part 4 — AI-Assisted Workflow Notes
 
 **Tools and scope:** Claude, as an assistant across Parts 0–3 — translating established TypeScript/Playwright testing patterns into idiomatic Java/JUnit equivalents while ramping up on Java specifically, drafting Page Object / REST Assured boilerplate, and structuring this README. Test strategy, scenario priority, every defect's exact behavior, and whether a given fix actually worked were decided and verified by hand against the live site and pipeline — not generated or taken on faith.
@@ -149,6 +173,6 @@ Workflow: [`.github/workflows/cicd.yml`](./.github/workflows/cicd.yml). Assumpti
 
 ## What I'd Do Differently With More Time
 
-- **UI:** resolve the two remaining open ambiguities (TC-34/35 case sensitivity and whitespace trimming; TC-30 sort-persistence) with the product team instead of leaving them undecided.
+- **UI:** dig deeper into the two remaining open ambiguities (TC-34/35 case sensitivity and whitespace trimming; TC-30 sort-persistence) rather than stopping at "confirmed, cause unclear" — e.g. repeat TC-30 from different starting sort options to see whether the fallback order is actually deterministic, which would narrow down whether it's a real bug or an intentional reset. In a real team setting this is also the kind of finding worth a quick confirmation from whoever owns the feature, rather than guessing either way.
 - **API:** add a second GoREST token to test cross-token isolation and the 403 response on writes, which isn't testable with a single token; add the "possible extensions" already listed in `api-tests/README.md` (injection-string storage, explicit-null handling, malformed pagination params); revisit whether a bounded, rate-limit-aware form of parallelism is worth the added complexity, now that `ui-tests` has a working parallel-execution pattern to borrow from.
 - **Both:** an `environment.properties` file for Allure so the report records the OS/Java version a run used, and extending parallel execution's CI config to account for GitHub-hosted runners' smaller CPU core count, which may not show the same speedup seen locally.

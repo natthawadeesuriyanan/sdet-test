@@ -1,0 +1,384 @@
+name: PR command
+
+# Run test suites on demand from a PR comment:
+#   /ui-test                              -> all UI tests, chromium
+#   /ui-test core-flow-test               -> CoreFlowTest only, chromium
+#   /ui-test core-flow-test browser chrome    -> CoreFlowTest on Google Chrome
+#   /ui-test all browser chrome,msedge    -> all UI tests on Chrome and Edge, in parallel
+#   /api-test                             -> all API tests
+#   /api-test user-validation-tests       -> UserValidationTests only
+#   /ui-test help, /api-test help         -> usage
+#
+# Adapted from a starter template for this repo. Changes made during adaptation:
+#   - actions/setup-java pinned to v5 (v6 is still in development on its main
+#     branch and explicitly not recommended for production as of this writing).
+#   - Test-name regex now matches BOTH naming conventions actually used in this
+#     repo: UI test classes end in "Test" (CoreFlowTest), API test classes end
+#     in "Tests" (UserValidationTests) — the original pattern only matched the
+#     singular form and would have found zero API test classes.
+#   - API test package corrected to com.sdet.gorest.tests (the template assumed
+#     com.gorest.tests).
+#   - System properties renamed to saucedemo.headless / saucedemo.browser to
+#     match this repo's existing TestConfig naming convention (plain -Dheadless
+#     / -Dbrowser would have been silently ignored by TestConfig).
+#   - Multi-browser selection requires TestConfig.browser() and BaseTest's
+#     launchBrowser() switch (added alongside this workflow) — without that
+#     code, -Dsaucedemo.browser would have had no effect at all.
+#   - Playwright-traces artifact replaced with the screenshots this repo
+#     already captures on failure (target/screenshots/); this repo doesn't
+#     record Playwright traces.
+#
+# Security model (issue_comment workflows run with the base repo's privileges):
+#   * this workflow file is always taken from the default branch, never from the PR;
+#   * only OWNER / MEMBER / COLLABORATOR comments are honoured;
+#   * the comment is passed via env and validated against an allowlist, never interpolated into a script;
+#   * PR code runs only in the test jobs, with a read-only token;
+#   * /ui-test jobs get no secrets; /api-test needs GOREST_API_TOKEN, so it is refused for PRs from forks
+#     (only code pushed to this repo by someone with write access ever sees the secret).
+# NOTE: GitHub only runs issue_comment workflows once this file exists on the default branch.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+# One run per PR and command type; a newer identical command supersedes the running one. Ordinary comments
+# get a unique group (their comment id) so they can never cancel a test run.
+concurrency:
+  group: pr-command-${{ github.event.issue.number }}-${{ startsWith(github.event.comment.body, '/ui-test') && 'ui' || startsWith(github.event.comment.body, '/api-test') && 'api' || github.event.comment.id }}
+  cancel-in-progress: true
+
+jobs:
+  parse:
+    name: Parse command
+    if: ${{ github.event.issue.pull_request && (startsWith(github.event.comment.body, '/ui-test') || startsWith(github.event.comment.body, '/api-test')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write          # reaction + reply on the PR conversation
+      pull-requests: write
+      statuses: write        # "pending" check on the PR head commit
+    outputs:
+      ok: ${{ steps.auth.outputs.allowed == 'true' && steps.parse.outputs.error == '' && steps.parse.outputs.kind != '' }}
+      kind: ${{ steps.parse.outputs.kind }}
+      test: ${{ steps.parse.outputs.test }}
+      label: ${{ steps.parse.outputs.label }}
+      browsers: ${{ steps.parse.outputs.browsers }}
+      sha: ${{ steps.pr.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check commenter is trusted
+        id: auth
+        env:
+          ASSOCIATION: ${{ github.event.comment.author_association }}
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: |
+          case "$ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) echo "allowed=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "allowed=false" >> "$GITHUB_OUTPUT"
+              gh pr comment "$PR" --repo "$REPO" --body "@$ACTOR sorry, only repository collaborators can run test commands."
+              echo "::warning::Ignored command from $ACTOR ($ASSOCIATION)"
+              ;;
+          esac
+
+      - name: Resolve PR head commit
+        id: pr
+        if: ${{ steps.auth.outputs.allowed == 'true' }}
+        run: |
+          pr_json=$(gh api "repos/$REPO/pulls/$PR")
+          echo "sha=$(jq -r .head.sha <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+          # head.repo is null when the fork was deleted; treat that as a fork too.
+          echo "head_repo=$(jq -r '.head.repo.full_name // "unknown"' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+
+      # Read-only listing of test class names from the PR; nothing from the PR is executed here.
+      - uses: actions/checkout@v7
+        if: ${{ steps.auth.outputs.allowed == 'true' }}
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            ui-tests/src/test/java/com/saucedemo/tests
+            api-tests/src/test/java/com/sdet/gorest/tests
+
+      - name: Parse and validate command
+        id: parse
+        if: ${{ steps.auth.outputs.allowed == 'true' }}
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
+        run: |
+          set -euo pipefail
+          allowed_browsers="chromium chrome msedge firefox webkit"
+
+          # First line only, CR stripped, split on whitespace.
+          line=$(printf '%s\n' "$COMMENT_BODY" | head -n1 | tr -d '\r')
+          read -r -a words <<< "$line"
+
+          case "${words[0]}" in
+            /ui-test)  kind=ui;  tests_dir=ui-tests/src/test/java/com/saucedemo/tests ;;
+            /api-test) kind=api; tests_dir=api-tests/src/test/java/com/sdet/gorest/tests ;;
+            *) kind=""; tests_dir="" ;;
+          esac
+
+          available=""
+          if [[ -n "$tests_dir" && -d "$tests_dir" ]]; then
+            # Matches both this repo's naming conventions: UI classes end in
+            # "Test" (CoreFlowTest), API classes end in "Tests" (UserValidationTests).
+            available=$(ls "$tests_dir" | sed -nE 's/^(.*Tests?)\.java$/\1/p' \
+              | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr 'A-Z' 'a-z' | paste -sd' ')
+          fi
+          if [[ "$kind" == ui ]]; then
+            usage="Usage: \`/ui-test [all|<test>] [browser <n>[,<n>...]]\`<br>Tests: \`${available// /\`, \`}\`<br>Browsers: \`${allowed_browsers// /\`, \`}\`"
+          elif [[ "$kind" == api ]]; then
+            usage="Usage: \`/api-test [all|<test>]\`<br>Tests: \`${available// /\`, \`}\`"
+          else
+            usage="Usage: \`/ui-test help\` or \`/api-test help\` for the list of tests."
+          fi
+
+          fail() { echo "error=$1" >> "$GITHUB_OUTPUT"; echo "usage=$usage" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          [[ -n "$kind" ]] || fail "Command must be \`/ui-test\` or \`/api-test\` followed by a space."
+
+          suite="all"; browsers="chromium"; i=1
+          if (( ${#words[@]} > 1 )) && [[ "${words[1]}" != browser && "${words[1]}" != browsers ]]; then
+            suite="${words[1]}"; i=2
+          fi
+          [[ "$suite" == help ]] && fail "Help requested."
+          while (( i < ${#words[@]} )); do
+            case "${words[i]}" in
+              browser|browsers)
+                [[ "$kind" == ui ]] || fail "\`browser\` is only valid for \`/ui-test\`."
+                (( i + 1 < ${#words[@]} )) || fail "\`browser\` needs a value."
+                browsers="${words[i+1]}"; i=$((i + 2)) ;;
+              *) fail "Unknown argument." ;;
+            esac
+          done
+
+          # API tests receive the GoREST secret, so only same-repository branches may run them.
+          if [[ "$kind" == api && "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]]; then
+            fail "\`/api-test\` is not allowed on pull requests from forks: the API tests use repository secrets. They run automatically after merge to main."
+          fi
+
+          # Test: "all" or a kebab-case class name that exists in the PR
+          # (core-flow-test -> CoreFlowTest, user-validation-tests -> UserValidationTests).
+          if [[ "$suite" == all ]]; then
+            test=""; label="all ${kind^^} tests"
+          else
+            [[ "$suite" =~ ^[a-z]+(-[a-z]+)*$ ]] || fail "Invalid test name."
+            test=$(sed -E 's/(^|-)([a-z])/\U\2/g' <<< "$suite")
+            [[ -f "$tests_dir/$test.java" ]] || fail "No ${kind^^} test named \`$suite\`."
+            label="$test"
+          fi
+
+          # Browsers: comma list from the allowlist, de-duplicated, emitted as a JSON array for the matrix.
+          [[ "$browsers" =~ ^[a-z]+(,[a-z]+)*$ ]] || fail "Invalid browser list."
+          json=""
+          for b in $(tr ',' '\n' <<< "$browsers" | awk '!seen[$0]++'); do
+            [[ " $allowed_browsers " == *" $b "* ]] || fail "Unsupported browser \`$b\`."
+            json+="${json:+,}\"$b\""
+          done
+
+          {
+            echo "error="
+            echo "kind=$kind"
+            echo "test=$test"
+            echo "label=$label"
+            echo "browsers=[$json]"
+          } >> "$GITHUB_OUTPUT"
+          echo "Running $kind: $label${json:+ on [$json]}"
+
+      - name: Reply with usage on invalid command
+        if: ${{ steps.auth.outputs.allowed == 'true' && steps.parse.outputs.error != '' }}
+        env:
+          ERROR: ${{ steps.parse.outputs.error }}
+          USAGE: ${{ steps.parse.outputs.usage }}
+          PR: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr comment "$PR" --repo "$REPO" --body "⚠️ $ERROR"$'\n\n'"$USAGE"
+          [[ "$ERROR" == "Help requested." ]] || exit 1
+
+      - name: Acknowledge
+        if: ${{ steps.auth.outputs.allowed == 'true' && steps.parse.outputs.error == '' }}
+        env:
+          COMMENT_ID: ${{ github.event.comment.id }}
+          SHA: ${{ steps.pr.outputs.sha }}
+          KIND: ${{ steps.parse.outputs.kind }}
+          LABEL: ${{ steps.parse.outputs.label }}
+          BROWSERS: ${{ steps.parse.outputs.browsers }}
+        run: |
+          target=$([[ "$KIND" == ui ]] && echo " on \`$BROWSERS\`" || echo " against GoREST")
+          gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" -f content=rocket --silent
+          gh api "repos/$REPO/statuses/$SHA" --silent -f state=pending -f context="$KIND-test (PR command)" \
+            -f description="Running $LABEL" -f target_url="$RUN_URL"
+          gh pr comment "$PR" --repo "$REPO" --body "🚀 Running **$LABEL**$target at ${SHA:0:7}. [Follow the run]($RUN_URL)"
+
+  ui-tests:
+    name: UI tests (${{ matrix.browser }})
+    needs: parse
+    if: ${{ needs.parse.outputs.ok == 'true' && needs.parse.outputs.kind == 'ui' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Runs PR code: read-only token, no secrets.
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON(needs.parse.outputs.browsers) }}
+    defaults:
+      run:
+        working-directory: ui-tests
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.parse.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: ui-tests/pom.xml
+
+      - name: Compile tests
+        run: mvn --batch-mode --no-transfer-progress test-compile
+
+      # chromium/firefox/webkit are Playwright builds; chrome/msedge are the vendor browsers (--force: the
+      # runner image may already ship Chrome).
+      - name: Install browser
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          case "$BROWSER" in chrome|msedge) force=--force ;; *) force= ;; esac
+          mvn --batch-mode --no-transfer-progress exec:java -Dexec.classpathScope=test \
+            -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps $force $BROWSER"
+
+      - name: Run UI tests
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'   # installed in the previous step
+          BROWSER: ${{ matrix.browser }}
+          TEST: ${{ needs.parse.outputs.test }}
+        run: mvn --batch-mode --no-transfer-progress test -Dsaucedemo.browser="$BROWSER" -Dsaucedemo.headless=true ${TEST:+-Dtest="$TEST"}
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-${{ matrix.browser }}
+          path: ui-tests/target/surefire-reports/
+          if-no-files-found: warn
+
+      - name: Upload failure screenshots
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-${{ matrix.browser }}
+          path: ui-tests/target/screenshots/
+          if-no-files-found: ignore
+
+  api-tests:
+    name: API tests
+    needs: parse
+    if: ${{ needs.parse.outputs.ok == 'true' && needs.parse.outputs.kind == 'api' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Runs same-repo PR code (forks are refused in `parse`) with the GoREST secret and a read-only token.
+    permissions:
+      contents: read
+    # Shared with cicd.yml: only one API run at a time across the repo, GoREST is shared and rate limited.
+    concurrency:
+      group: gorest-api
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: api-tests
+    env:
+      GOREST_API_TOKEN: ${{ secrets.GOREST_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.parse.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: api-tests/pom.xml
+
+      - name: Check API token is configured
+        run: |
+          if [ -z "${GOREST_API_TOKEN}" ]; then
+            echo "::error title=Missing secret::GOREST_API_TOKEN repository secret is not set (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Run API tests
+        env:
+          TEST: ${{ needs.parse.outputs.test }}
+        run: mvn --batch-mode --no-transfer-progress test ${TEST:+-Dtest="$TEST"}
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-api
+          path: api-tests/target/surefire-reports/
+          if-no-files-found: warn
+
+  report:
+    name: Report back to PR
+    needs: [parse, ui-tests, api-tests]
+    if: ${{ !cancelled() && needs.parse.outputs.ok == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
+      SHA: ${{ needs.parse.outputs.sha }}
+      KIND: ${{ needs.parse.outputs.kind }}
+      LABEL: ${{ needs.parse.outputs.label }}
+      BROWSERS: ${{ needs.parse.outputs.browsers }}
+      RESULT: ${{ needs.parse.outputs.kind == 'ui' && needs.ui-tests.result || needs.api-tests.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: reports-*
+
+      - name: Post results
+        run: |
+          set -euo pipefail
+          sum() { grep -ho "<testsuite [^>]*" "$1"/TEST-*.xml | grep -o " $2=\"[0-9]*\"" | grep -o '[0-9]*' | paste -sd+ | bc; }
+          if [[ "$KIND" == ui ]]; then targets=$(jq -r '.[]' <<< "$BROWSERS"); column=Browser; else targets=api; column=Suite; fi
+          table="| $column | Result | Tests | Failed | Errors | Skipped |"$'\n'"|---|---|---|---|---|---|"
+          for t in $targets; do
+            dir="reports-$t"
+            if ls "$dir"/TEST-*.xml >/dev/null 2>&1; then
+              n=$(sum "$dir" tests); f=$(sum "$dir" failures); e=$(sum "$dir" errors); s=$(sum "$dir" skipped)
+              icon=$([[ "$f" == 0 && "$e" == 0 ]] && echo "✅" || echo "❌")
+              table+=$'\n'"| $t | $icon | $n | $f | $e | $s |"
+            else
+              table+=$'\n'"| $t | ❌ no report (failed before tests ran) | | | | |"
+            fi
+          done
+          if [[ "$RESULT" == success ]]; then state=success; head="✅ **$LABEL** passed"; else state=failure; head="❌ **$LABEL** failed"; fi
+          gh pr comment "$PR" --repo "$REPO" --body "$head at ${SHA:0:7}"$'\n\n'"$table"$'\n\n'"[Run details, reports and logs]($RUN_URL)"
+          gh api "repos/$REPO/statuses/$SHA" --silent -f state="$state" -f context="$KIND-test (PR command)" \
+            -f description="$LABEL: $RESULT" -f target_url="$RUN_URL"
+          [[ "$state" == success ]]
