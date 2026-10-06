@@ -306,7 +306,7 @@ jobs:
     # Runs same-repo PR code (forks are refused in `parse`) with the GoREST secret and a read-only token.
     permissions:
       contents: read
-    # Shared with cicd.yml: only one API run at a time across the repo, GoREST is shared and rate limited.
+    # Shared with ci.yml: only one API run at a time across the repo, GoREST is shared and rate limited.
     concurrency:
       group: gorest-api
       cancel-in-progress: false
