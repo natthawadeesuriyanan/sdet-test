@@ -130,7 +130,7 @@ One confirmed case-sensitive email-uniqueness defect is explicitly skipped with 
 
 # Part 3 — CI/CD
 
-Workflow: [`.github/workflows/cicd.yml`](./.github/workflows/cicd.yml)
+Workflow: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
 
 **Assumption:** the default branch is `main`, matching the starter workflow.
 
@@ -161,7 +161,7 @@ Two useful examples:
 - UI failure screenshots are preserved.
 - Missing `GOREST_API_TOKEN` fails clearly before token-dependent tests run.
 
-**Completed run:** [GitHub Actions run on `main`](https://github.com/natthawadeesuriyanan/sdet-test/actions/runs/37316976494)
+**Completed run:** [GitHub Actions run on `main`](https://github.com/natthawadeesuriyanan/sdet-test/actions/runs/37433501336) (confirms `ci.yml` — the correctly renamed filename — runs successfully)
 
 All four jobs passed: UI 38/38; API 55 passed + 1 skipped; both result-report jobs passed.
 
@@ -252,3 +252,4 @@ While building it I also fixed issues involving action versioning, test discover
 - **UI:** investigate remaining case/whitespace and sort-persistence ambiguities with controlled starting states before classifying them as defects.
 - **API:** add a second GoREST token for cross-token isolation and authenticated write behavior; add the remaining identified validation edge cases.
 - **CI/reporting:** add environment metadata to Allure and evaluate CI parallelism against GitHub runner CPU limits.
+

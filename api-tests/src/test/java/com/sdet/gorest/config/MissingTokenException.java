@@ -5,7 +5,7 @@ public class MissingTokenException extends IllegalStateException {
 
     public MissingTokenException() {
         super("""
-                The GoREST API tests require a personal access token to be supplied via the environment variable GOREST_TOKEN.
+                The GoREST API tests require a personal access token to be supplied via the environment variable GOREST_API_TOKEN.
                 """);
     }
 }
