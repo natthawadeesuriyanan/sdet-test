@@ -28,15 +28,10 @@ import java.nio.file.Path;
 
 /**
  * Parallel execution note: Playwright objects are NOT safe to share across
- * threads (see playwright.dev/java/docs/test-runners). Per Playwright's own
- * guidance, this class uses @TestInstance(PER_CLASS) with non-static
- * playwright/browser fields, so each test CLASS gets its own independent
- * instance rather than all subclasses sharing one static field (the bug a
- * static field here would cause: two classes running concurrently on
- * different threads would race on the same memory location). Combined with
- * junit-platform.properties (same_thread within a class, concurrent across
- * classes), this launches one browser per class — same performance as
- * before — while remaining correct under parallel execution.
+ * threads (see playwright.dev/java/docs/test-runners). This class uses
+ * @TestInstance(PER_CLASS) with non-static playwright/browser fields, so
+ * each test CLASS gets its own independent instance rather than all
+ * subclasses sharing one static field.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class BaseTest {
@@ -78,8 +73,34 @@ public abstract class BaseTest {
     @BeforeAll
     void startBrowser() {
         playwright = Playwright.create();
-        playwright.selectors().setTestIdAttribute("data-test"); 
-        browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(TestConfig.headless()));
+        playwright.selectors().setTestIdAttribute("data-test");
+        browser = launchBrowser(playwright, TestConfig.browser(), TestConfig.headless());
+    }
+
+    /**
+     * Supports "chromium", "firefox", "webkit" (separate Playwright-bundled
+     * engines) and "chrome", "msedge" (vendor browsers, launched via
+     * Chromium's channel option rather than a separate engine — this is how
+     * Playwright itself expects these two to be requested).
+     */
+    private static Browser launchBrowser(Playwright playwright, String browserName, boolean headless) {
+        BrowserType.LaunchOptions options = new BrowserType.LaunchOptions().setHeadless(headless);
+        switch (browserName) {
+            case "firefox":
+                return playwright.firefox().launch(options);
+            case "webkit":
+                return playwright.webkit().launch(options);
+            case "chrome":
+                return playwright.chromium().launch(options.setChannel("chrome"));
+            case "msedge":
+                return playwright.chromium().launch(options.setChannel("msedge"));
+            case "chromium":
+                return playwright.chromium().launch(options);
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported browser '" + browserName
+                                + "'. Expected one of: chromium, chrome, msedge, firefox, webkit.");
+        }
     }
 
     @AfterAll
@@ -101,7 +122,7 @@ public abstract class BaseTest {
 
         loginLocators = new LoginLocators(page);
         loginActions = new LoginActions(page, loginLocators);
-        loginActions.open(TestConfig.baseUrl());   
+        loginActions.open(TestConfig.baseUrl());
         inventoryLocators = new InventoryLocators(page);
         cartLocators = new CartLocators(page);
         checkoutLocators = new CheckoutLocators(page);
