@@ -392,15 +392,6 @@ jobs:
               || echo "::warning::No reports-$t artifact found (that job may have failed before producing a report)"
           done
 
-      # TEMPORARY — do not remove until the actual directory layout below is
-      # seen and the report-finding logic is confirmed fixed against it.
-      - name: Debug - show what was actually downloaded
-        run: |
-          echo "--- Current directory ---"; pwd
-          echo "--- Top-level contents ---"; ls -la
-          echo "--- Recursive listing of everything downloaded ---"; find . -type f
-          echo "--- Specifically looking for reports-api ---"; find . -iname '*reports-api*'
-
       - name: Post results
         run: |
           set -euo pipefail
