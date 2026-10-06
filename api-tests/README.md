@@ -153,13 +153,19 @@ Exactly one test is `@Disabled`, and only for a confirmed defect. A suite that d
 | Exact 401 message text varies (`Invalid token`, `Authentication failed`) | The suite asserts status, schema and a non-blank message, not the wording. |
 
 ## Possible extensions
-* Injection-style strings (`<script>`, `' OR 1=1 --`) must be stored literally and never cause a 5xx.
+* Send injection-style strings as the name/email (`<script>alert(1)</script>`, `' OR 1=1 --`) and confirm two things: the API stores them as plain literal text rather than executing them, and the request never causes a 500 — a basic sanity check that the service doesn't choke on hostile-looking input, not a full security audit.
 * An explicit `null` (`{"name": null}`) as distinct from a missing field. The POJO currently omits nulls, so this needs a raw-body test.
 * Whitespace trimming, idempotent repeated PUT, PUT with an empty or partial body.
-* Malformed paging parameters (`page=0`, `page=-1`, `per_page=abc`) → never 5xx.
+* Send nonsensical pagination values — `page=0`, `page=-1` (negative), `per_page=abc` (letters instead of a number) — and confirm the API responds with a clean 4xx (a proper rejection) rather than a 500, which would suggest it tried to use the bad value directly in a calculation instead of validating it first.
 * Malformed `Authorization` headers (`Bearer` with no token, `Basic ...`) and the `?access-token=` query transport.
-* The `Location` header on 201, which the docs mention.
+* Check for a `Location` response header after a successful `POST` (status 201) — standard REST practice is for this header to point at the URL of the newly created resource (e.g. `Location: /users/12345`). GoREST's docs mention it, but this suite has never actually checked whether it's present or correct.
 * A second token (`GOREST_API_TOKEN_SECONDARY`) to test the 403 response and cross-token isolation for writes.
 * Attaching the full `HttpExchangeRecorder` transcript to each failed test's Allure result, not just printing it to the console — Allure reporting itself is already implemented (see "Allure Report" above), this would extend it.
 * Contract tests generated from an OpenAPI spec, if GoREST publishes one.
-* Using `?force_status=429/503` to unit-test the retry policy against the real service.
+* `ApiClient` already contains logic to automatically retry a request when the server responds with 429 (rate limited) or 503 (temporarily unavailable) — but that logic has never actually been exercised in a test, because the live API rarely returns those codes on demand. If GoREST exposes a `?force_status=429` (or `503`) parameter that deliberately returns that error, a test could use it to prove the retry logic actually works, instead of just trusting that it would work if it were ever needed.
+
+---
+
+## Extra, Not Part of the Assignment: Running from a PR Comment
+
+A collaborator can trigger this suite (or a single test class) from a PR comment — `/api-test` or `/api-test user-crud-tests`, for example — without running anything locally. See the root `README.md`'s "Beyond the brief — on-demand PR testing" for the full command list, the security model, and the bugs found while building it.

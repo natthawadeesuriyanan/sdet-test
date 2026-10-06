@@ -42,7 +42,7 @@ The Playwright browser install is a one-time step per Playwright version. Playwr
 
 ## Coverage
 
-- `CoreFlowTest`: TC-01–03, TC-05–11, TC-14–22, TC-25–26. Includes standard-user checkout, locked-out rejection, authentication validation, incremental cart badge, checkout field validation (all three mandatory fields), sorting, totals/tax, and performance measurement.
+- `CoreFlowTest`: TC-01–03, TC-05–11, TC-14–22, TC-25–26. Includes `standard_user` checkout, `locked_out_user` rejection (TC-03, asserts the exact "Epic sadface: Sorry, this user has been locked out." message), authentication validation, incremental cart badge, checkout field validation (all three mandatory fields), sorting, totals/tax, and performance measurement.
 - `ProblemUserTest`: TC-04, TC-12, TC-13a–13b, TC-23–24. Known defects are tagged `@Tag("known-defect")` and asserted as observed so a site change makes the regression check fail for review — see "Observed Defects Summary" below for the full list.
 - `EdgeCoverageTest`: TC-27–33, TC-36–38. Includes the receipt PDF download (TC-37) and the Reset App State stale-label behavior (TC-38), both discovered during exploration and outside the original Part 0 scope.
 - TC-34 and TC-35 remain manual: case sensitivity and whitespace trimming are unresolved in the supplied test design and have no agreed expected result.
@@ -106,7 +106,7 @@ mvn test "-Dsaucedemo.browser=chrome" "-Dtest=CoreFlowTest"
 mvn "-Dexec.classpathScope=test" "-Dexec.mainClass=com.microsoft.playwright.CLI" "-Dexec.args=install firefox" exec:java
 ```
 
-In CI, `.github/workflows/pr-command.yml` exposes this as a PR-comment command — `/ui-test all browser chrome,msedge` runs the full suite on both in parallel matrix jobs. See the root `README.md`'s "On-demand test runs via PR comments" section for the full command list. Without `TestConfig.browser()`/`launchBrowser()`, that workflow's `-Dsaucedemo.browser` flag would have had no effect at all and every run would have silently stayed on Chromium.
+In CI, `.github/workflows/pr-command.yml` exposes this as a PR-comment command — `/ui-test all browser chrome,msedge` runs the full suite on both in parallel matrix jobs. See the root `README.md`'s "Beyond the brief — on-demand PR testing" section for the full command list. Without `TestConfig.browser()`/`launchBrowser()`, that workflow's `-Dsaucedemo.browser` flag would have had no effect at all and every run would have silently stayed on Chromium.
 
 ## Performance Measurements
 
@@ -117,3 +117,9 @@ mvn "-Dsaucedemo.performanceAssertions=true" "-Dsaucedemo.standardLoginMaxMs=300
 ```
 
 Override the base URL or browser mode with `SAUCEDEMO_BASE_URL` and `SAUCEDEMO_HEADLESS`, or equivalent `saucedemo.baseUrl` and `saucedemo.headless` system properties. The default is headless Chromium.
+
+---
+
+## Extra, Not Part of the Assignment: Running from a PR Comment
+
+A collaborator can trigger this suite (or a single test class, on a specific browser) from a PR comment — `/ui-test`, `/ui-test core-flow-test`, `/ui-test all browser chrome,msedge`, etc. — without running anything locally. See the root `README.md`'s "Beyond the brief — on-demand PR testing" for the full command list, the security model, and the bugs found while building it; see "Multi-Browser Support" above for how the `browser` option is wired to actual test code.
