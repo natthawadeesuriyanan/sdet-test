@@ -131,8 +131,19 @@ jobs:
           if [[ -n "$tests_dir" && -d "$tests_dir" ]]; then
             # Matches both this repo's naming conventions: UI classes end in
             # "Test" (CoreFlowTest), API classes end in "Tests" (UserValidationTests).
-            available=$(ls "$tests_dir" | sed -nE 's/^(.*Tests?)\.java$/\1/p' \
-              | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr 'A-Z' 'a-z' | paste -sd' ')
+            # Abstract base classes (BaseTest, BaseApiTest) match this same naming
+            # pattern but have no @Test methods of their own — running them directly
+            # gives Maven "Tests run: 0, BUILD SUCCESS" with no error at all, which
+            # looks like a pass but tested nothing. Excluded here by checking each
+            # candidate file's class declaration for "abstract class".
+            for f in "$tests_dir"/*.java; do
+              [[ -f "$f" ]] || continue
+              base=$(basename "$f" .java)
+              [[ "$base" =~ Tests?$ ]] || continue
+              grep -q "abstract class $base" "$f" && continue
+              available+="${available:+ }$base"
+            done
+            available=$(tr ' ' '\n' <<< "$available" | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr 'A-Z' 'a-z' | paste -sd' ')
           fi
           if [[ "$kind" == ui ]]; then
             usage="Usage: \`/ui-test [all|<test>] [browser <n>[,<n>...]]\`<br>Tests: \`${available// /\`, \`}\`<br>Browsers: \`${allowed_browsers// /\`, \`}\`"
@@ -174,6 +185,7 @@ jobs:
             [[ "$suite" =~ ^[a-z]+(-[a-z]+)*$ ]] || fail "Invalid test name."
             test=$(sed -E 's/(^|-)([a-z])/\U\2/g' <<< "$suite")
             [[ -f "$tests_dir/$test.java" ]] || fail "No ${kind^^} test named \`$suite\`."
+            grep -q "abstract class $test" "$tests_dir/$test.java" && fail "\`$suite\` is a base class, not a runnable test. See \`/${kind}-test help\` for the list of actual tests."
             label="$test"
           fi
 
@@ -267,7 +279,7 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'   # installed in the previous step
           BROWSER: ${{ matrix.browser }}
           TEST: ${{ needs.parse.outputs.test }}
-        run: mvn --batch-mode --no-transfer-progress test -Dsaucedemo.browser="$BROWSER" -Dsaucedemo.headless=true ${TEST:+-Dtest="$TEST"}
+        run: mvn --batch-mode --no-transfer-progress test -Dsaucedemo.browser="$BROWSER" -Dsaucedemo.headless=true ${TEST:+-Dtest="$TEST" -DfailIfNoSpecifiedTests=true}
 
       - name: Upload test reports
         if: ${{ !cancelled() }}
@@ -326,7 +338,7 @@ jobs:
       - name: Run API tests
         env:
           TEST: ${{ needs.parse.outputs.test }}
-        run: mvn --batch-mode --no-transfer-progress test ${TEST:+-Dtest="$TEST"}
+        run: mvn --batch-mode --no-transfer-progress test ${TEST:+-Dtest="$TEST" -DfailIfNoSpecifiedTests=true}
 
       - name: Upload test reports
         if: ${{ !cancelled() }}
@@ -361,12 +373,14 @@ jobs:
         with:
           pattern: reports-*
 
-      # TEMPORARY — remove once the path mismatch below is confirmed and fixed.
+      # TEMPORARY — do not remove until the actual directory layout below is
+      # seen and the report-finding logic is confirmed fixed against it.
       - name: Debug - show what was actually downloaded
         run: |
           echo "--- Current directory ---"; pwd
           echo "--- Top-level contents ---"; ls -la
-          echo "--- Everything under reports-* ---"; find . -path '*/reports-*' -type f
+          echo "--- Recursive listing of everything downloaded ---"; find . -type f
+          echo "--- Specifically looking for reports-api ---"; find . -iname '*reports-api*'
 
       - name: Post results
         run: |
