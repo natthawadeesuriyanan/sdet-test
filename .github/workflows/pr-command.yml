@@ -355,6 +355,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read       # required by `gh run download`'s REST API call, below
       issues: write
       pull-requests: write
       statuses: write
@@ -369,16 +370,27 @@ jobs:
       RESULT: ${{ needs.parse.outputs.kind == 'ui' && needs.ui-tests.result || needs.api-tests.result }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      # actions/download-artifact@v7 only creates a per-artifact subdirectory
-      # when the pattern matches MORE than one artifact — confirmed by testing
-      # a solo /api-test run (one artifact, "reports-api") where it extracted
-      # files flat into the workspace root instead of "reports-api/", breaking
-      # the per-target lookup below. "gh run download" does not have this
-      # inconsistency: it always creates one subdirectory per artifact name.
+      # Both actions/download-artifact and `gh run download --pattern` only
+      # create a per-artifact subdirectory when the pattern matches MORE THAN
+      # ONE artifact — per gh's own man page: "If only a single artifact is
+      # specified, it will be extracted into the current directory." A solo
+      # /api-test run matches exactly one artifact ("reports-api"), so either
+      # tool would extract flat into the workspace root, breaking the
+      # per-target lookup below regardless of which one is used.
+      #
+      # Fix: never rely on that auto-detection at all. Download each known
+      # target by its exact name into its own explicit --dir, one at a time.
+      # This has no single-vs-multiple ambiguity because each call only ever
+      # asks for one specific artifact going to one specific, known folder.
       - name: Download reports
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download ${{ github.run_id }} --repo "$REPO" --pattern 'reports-*'
+        run: |
+          if [[ "$KIND" == ui ]]; then targets=$(jq -r '.[]' <<< "$BROWSERS"); else targets=api; fi
+          for t in $targets; do
+            gh run download "${{ github.run_id }}" --repo "$REPO" -n "reports-$t" --dir "reports-$t" \
+              || echo "::warning::No reports-$t artifact found (that job may have failed before producing a report)"
+          done
 
       # TEMPORARY — do not remove until the actual directory layout below is
       # seen and the report-finding logic is confirmed fixed against it.
