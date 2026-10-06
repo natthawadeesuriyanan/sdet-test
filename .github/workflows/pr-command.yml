@@ -361,6 +361,13 @@ jobs:
         with:
           pattern: reports-*
 
+      # TEMPORARY — remove once the path mismatch below is confirmed and fixed.
+      - name: Debug - show what was actually downloaded
+        run: |
+          echo "--- Current directory ---"; pwd
+          echo "--- Top-level contents ---"; ls -la
+          echo "--- Everything under reports-* ---"; find . -path '*/reports-*' -type f
+
       - name: Post results
         run: |
           set -euo pipefail
