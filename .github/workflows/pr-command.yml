@@ -369,9 +369,16 @@ jobs:
       RESULT: ${{ needs.parse.outputs.kind == 'ui' && needs.ui-tests.result || needs.api-tests.result }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - uses: actions/download-artifact@v7
-        with:
-          pattern: reports-*
+      # actions/download-artifact@v7 only creates a per-artifact subdirectory
+      # when the pattern matches MORE than one artifact — confirmed by testing
+      # a solo /api-test run (one artifact, "reports-api") where it extracted
+      # files flat into the workspace root instead of "reports-api/", breaking
+      # the per-target lookup below. "gh run download" does not have this
+      # inconsistency: it always creates one subdirectory per artifact name.
+      - name: Download reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download ${{ github.run_id }} --repo "$REPO" --pattern 'reports-*'
 
       # TEMPORARY — do not remove until the actual directory layout below is
       # seen and the report-finding logic is confirmed fixed against it.
