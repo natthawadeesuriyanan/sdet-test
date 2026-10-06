@@ -41,7 +41,7 @@ class ProblemUserTest extends BaseTest {
         // Confirmed defect (highest severity in this suite): typing in the Last
         // Name field on the checkout form shifts the text into the First Name
         // field instead, leaving Last Name empty.
-        // TODO:  If fixed, should be uncomment out the following two lines to assert normal field behavior:
+        // TODO:  If the defect is fixed, should be uncomment out the following two lines to assert normal field behavior:
         // assertEquals("Ida", checkoutLocators.firstName().inputValue());
         // assertEquals("Lover", checkoutLocators.lastName().inputValue());
         checkout.continueToOverview();
@@ -57,7 +57,7 @@ class ProblemUserTest extends BaseTest {
         }
         // Confirmed defect: only 3 of the 6 "Add to cart" buttons actually add
         // their product to the cart. The other 3 buttons are broken and do not add their product.
-        // TODO: if defect is fixed, uncomment the line below to verify.
+        // TODO: if the defect is fixed, uncomment the line below to verify.
         //PlaywrightAssertions.assertThat(inventoryLocators.cartBadge()).hasText("6");
 
     }

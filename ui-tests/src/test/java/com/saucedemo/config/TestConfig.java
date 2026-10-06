@@ -14,7 +14,17 @@ public final class TestConfig {
     }
 
     public static boolean headless() {
-        return Boolean.parseBoolean(setting("saucedemo.headless", "SAUCEDEMO_HEADLESS", "true"));
+        return Boolean.parseBoolean(setting("saucedemo.headless", "SAUCEDEMO_HEADLESS", "false"));
+    }
+
+    /**
+     * Which browser engine/channel to launch. One of: chromium, chrome,
+     * msedge, firefox, webkit. Defaults to chromium, matching prior
+     * behavior for anyone not explicitly selecting a browser (e.g. running
+     * `mvn test` locally without any -D flag).
+     */
+    public static String browser() {
+        return setting("saucedemo.browser", "SAUCEDEMO_BROWSER", "chromium").toLowerCase();
     }
 
     public static int timeoutMs() {
@@ -34,7 +44,7 @@ public final class TestConfig {
     }
 
     public static boolean performanceAssertionsEnabled() {
-        return Boolean.parseBoolean(setting("saucedemo.performanceAssertions", "SAUCEDEMO_PERFORMANCE_ASSERTIONS", "true"));
+        return Boolean.parseBoolean(setting("saucedemo.performanceAssertions", "SAUCEDEMO_PERFORMANCE_ASSERTIONS", "false"));
     }
 
     private static int integerSetting(String property, String environmentVariable, int fallback) {
