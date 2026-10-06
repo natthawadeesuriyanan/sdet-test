@@ -72,9 +72,9 @@ These are findings where the actual behavior is documented and tested, but it's 
 
 | Test ID | Observed Behavior | Open Question |
 |---|---|---|
-| TC-30 | Applying a sort, then navigating to a product detail page and back via browser Back, does **not** keep the applied sort — **confirmed by running**, the resulting order matches neither the applied sort nor any other single dropdown option (not alphabetical, not price ascending or descending). The test asserts only that the order changed (`assertNotEquals`), not what it changed to, since the fallback order isn't shown to be deterministic. | Cart state persists across the same navigation (TC-28), so the inconsistency is worth a product/dev decision: should sort state persist too? And if the reset order isn't any documented sort, is it even deterministic, or could it vary between runs? |
+| TC-30 | Applying a sort, then navigating to a product detail page and back via browser Back, does **not** keep the applied sort — **confirmed by running**, the resulting order matches neither the applied sort nor any other single dropdown option (not alphabetical, not price ascending or descending). The test asserts only that the order changed (`assertNotEquals`), not what it changed to, since the fallback order isn't shown to be deterministic. | Cart state persists across the same navigation (TC-28), so the inconsistency is worth digging into further: is sort state meant to persist too? And since the reset order isn't any documented sort, is it even deterministic, or could it vary between runs — this hasn't been confirmed either way. |
 
-If product/dev confirms either answer, this test's name and assertion should be updated accordingly — and, if the team decides it's a defect, it should move into the confirmed-defects table above with a `@Tag("known-defect")`.
+If either question is resolved by further testing, this test's name and assertion should be updated accordingly — and if it turns out to be a genuine defect rather than intentional behavior, it should move into the confirmed-defects table above with a `@Tag("known-defect")`.
 
 ## Allure Report
 
@@ -87,6 +87,26 @@ Only three tests retry, via `@RetryingTest(3)` from `junit-pioneer`: the `perfor
 ## Parallel Execution
 
 Enabled via `src/test/resources/junit-platform.properties`: test classes run concurrently (`classes.default = concurrent`), while methods within a class stay sequential (`mode.default = same_thread`). This matches Playwright's own guidance that `Playwright`/`Browser` objects aren't safe to share across threads — `BaseTest` uses `@TestInstance(PER_CLASS)` with non-static `Playwright`/`Browser` fields so each test class gets its own independent instance, rather than all three subclasses racing on one shared static field (which is what a naive `static` field here would cause under parallel execution). Verified: total suite time dropped from 56.7s to 35.3s with all 38 tests still passing, and the new total sits close to the slowest individual class rather than the sum of all three — confirming classes genuinely ran concurrently, not just that the config flag was set.
+
+## Multi-Browser Support
+
+The suite runs on Chromium by default, but can target any of 5 browsers via `TestConfig.browser()` and a `launchBrowser()` switch in `BaseTest`: `chromium`, `firefox`, `webkit` (Playwright's own bundled engines) and `chrome`, `msedge` (the real vendor browsers, launched via Chromium's `.setChannel(...)` option, which is how Playwright itself expects these two to be requested — they aren't separate engines).
+
+Select a browser with the `saucedemo.browser` system property (or the `SAUCEDEMO_BROWSER` environment variable), following the same convention as `saucedemo.headless`:
+
+```powershell
+mvn test "-Dsaucedemo.browser=firefox" "-Dtest=CoreFlowTest"
+mvn test "-Dsaucedemo.browser=webkit" "-Dtest=CoreFlowTest"
+mvn test "-Dsaucedemo.browser=chrome" "-Dtest=CoreFlowTest"
+```
+
+`chrome` and `msedge` require that browser to actually be installed on the machine running the tests (they aren't downloaded by Playwright the way Chromium/Firefox/WebKit are); `chromium`, `firefox` and `webkit` need their Playwright-managed binary installed first, the same way as the default Chromium setup above, just naming the engine instead:
+
+```powershell
+mvn "-Dexec.classpathScope=test" "-Dexec.mainClass=com.microsoft.playwright.CLI" "-Dexec.args=install firefox" exec:java
+```
+
+In CI, `.github/workflows/pr-command.yml` exposes this as a PR-comment command — `/ui-test all browser chrome,msedge` runs the full suite on both in parallel matrix jobs. See the root `README.md`'s "On-demand test runs via PR comments" section for the full command list. Without `TestConfig.browser()`/`launchBrowser()`, that workflow's `-Dsaucedemo.browser` flag would have had no effect at all and every run would have silently stayed on Chromium.
 
 ## Performance Measurements
 
